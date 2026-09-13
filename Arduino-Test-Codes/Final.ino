@@ -2,41 +2,63 @@
 #include <HTTPClient.h>
 #include <Wire.h>
 #include <RTClib.h>
+#include <time.h>
 
-// =========================
+// =====================================================
 // WiFi
-// =========================
+// =====================================================
 
 const char* ssid = "Mama";
 const char* password = "MamaBari9900";
 
-// =========================
+// =====================================================
 // Render FastAPI
-// =========================
+// =====================================================
 
 const char* serverUrl =
   "https://smartmedbox-3xct.onrender.com/api/sensor";
 
-// =========================
+// =====================================================
 // Sensor Pins
-// =========================
+// =====================================================
 
 #define REED_PIN 27
 #define IR_PIN   26
 
-// =========================
+// =====================================================
 // RTC
-// =========================
+// =====================================================
 
 RTC_DS3231 rtc;
 
-// =========================
+// =====================================================
+// Bangladesh Timezone
+// Bangladesh = UTC + 6
+// =====================================================
+
+const long GMT_OFFSET_SEC = 6 * 60 * 60;
+const int DAYLIGHT_OFFSET_SEC = 0;
+
+// NTP server
+const char* ntpServer = "pool.ntp.org";
+
+// =====================================================
 // Timing
-// =========================
+// =====================================================
 
 unsigned long lastSendTime = 0;
 const unsigned long sendInterval = 5000; // 5 seconds
 
+// =====================================================
+// FUNCTION DECLARATIONS
+// =====================================================
+
+void syncRTCWithNTP();
+void sendSensorData(
+  DateTime now,
+  bool boxOpen,
+  bool irDetected
+);
 
 // =====================================================
 // SETUP
@@ -53,15 +75,15 @@ void setup() {
   Serial.println(" ESP32 + RTC + Reed + IR + API");
   Serial.println("--------------------------------");
 
-  // =========================
+  // ===================================================
   // I2C
-  // =========================
+  // ===================================================
 
   Wire.begin(21, 22);
 
-  // =========================
+  // ===================================================
   // DS3231
-  // =========================
+  // ===================================================
 
   if (!rtc.begin()) {
 
@@ -70,29 +92,23 @@ void setup() {
     while (1);
   }
 
-  if (rtc.lostPower()) {
+  Serial.println("DS3231 detected!");
 
-    Serial.println("RTC lost power.");
-    Serial.println("Setting RTC time from compile time...");
-
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  }
-
-  // =========================
+  // ===================================================
   // Reed Switch
-  // =========================
+  // ===================================================
 
   pinMode(REED_PIN, INPUT_PULLUP);
 
-  // =========================
+  // ===================================================
   // IR Sensor
-  // =========================
+  // ===================================================
 
   pinMode(IR_PIN, INPUT);
 
-  // =========================
+  // ===================================================
   // WiFi
-  // =========================
+  // ===================================================
 
   Serial.println();
   Serial.print("Connecting to WiFi");
@@ -112,6 +128,26 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   Serial.println("--------------------------------");
+
+  // ===================================================
+  // NTP TIME CONFIGURATION
+  // ===================================================
+
+  Serial.println("Getting Bangladesh time from NTP...");
+
+  configTime(
+    GMT_OFFSET_SEC,
+    DAYLIGHT_OFFSET_SEC,
+    ntpServer
+  );
+
+  // ===================================================
+  // SYNC DS3231 WITH NTP
+  // ===================================================
+
+  syncRTCWithNTP();
+
+  Serial.println("--------------------------------");
 }
 
 
@@ -121,16 +157,15 @@ void setup() {
 
 void loop() {
 
-  // =========================
+  // ===================================================
   // 1. READ RTC
-  // =========================
+  // ===================================================
 
   DateTime now = rtc.now();
 
-
-  // =========================
+  // ===================================================
   // 2. READ REED SWITCH
-  // =========================
+  // ===================================================
 
   int reedState = digitalRead(REED_PIN);
 
@@ -145,10 +180,9 @@ void loop() {
     boxOpen = true;
   }
 
-
-  // =========================
+  // ===================================================
   // 3. READ IR SENSOR
-  // =========================
+  // ===================================================
 
   int irState = digitalRead(IR_PIN);
 
@@ -163,14 +197,13 @@ void loop() {
     irDetected = false;
   }
 
-
-  // =========================
+  // ===================================================
   // SERIAL MONITOR
-  // =========================
+  // ===================================================
 
   Serial.println();
 
-  Serial.print("Time: ");
+  Serial.print("RTC Time: ");
 
   if (now.hour() < 10)
     Serial.print("0");
@@ -189,7 +222,6 @@ void loop() {
 
   Serial.println(now.second());
 
-
   Serial.print("Box: ");
 
   if (boxOpen)
@@ -197,10 +229,8 @@ void loop() {
   else
     Serial.println("CLOSED");
 
-
   Serial.print("IR Raw: ");
   Serial.println(irState);
-
 
   Serial.print("IR Status: ");
 
@@ -209,13 +239,11 @@ void loop() {
   else
     Serial.println("NO OBJECT");
 
-
   Serial.println("--------------------------------");
 
-
-  // =========================
+  // ===================================================
   // SEND TO SERVER EVERY 5 SEC
-  // =========================
+  // ===================================================
 
   if (millis() - lastSendTime >= sendInterval) {
 
@@ -233,6 +261,83 @@ void loop() {
 
 
 // =====================================================
+// SYNC DS3231 WITH NTP
+// =====================================================
+
+void syncRTCWithNTP() {
+
+  struct tm timeinfo;
+
+  // Wait for NTP time
+  if (!getLocalTime(&timeinfo, 10000)) {
+
+    Serial.println("ERROR: Failed to get NTP time!");
+
+    Serial.println("Using existing DS3231 time.");
+
+    return;
+  }
+
+  // ===================================================
+  // Print NTP Time
+  // ===================================================
+
+  Serial.println();
+  Serial.println("NTP Time received:");
+
+  Serial.printf(
+    "%04d-%02d-%02d %02d:%02d:%02d\n",
+    timeinfo.tm_year + 1900,
+    timeinfo.tm_mon + 1,
+    timeinfo.tm_mday,
+    timeinfo.tm_hour,
+    timeinfo.tm_min,
+    timeinfo.tm_sec
+  );
+
+  // ===================================================
+  // Convert NTP time to DateTime
+  // ===================================================
+
+  DateTime ntpTime(
+    timeinfo.tm_year + 1900,
+    timeinfo.tm_mon + 1,
+    timeinfo.tm_mday,
+    timeinfo.tm_hour,
+    timeinfo.tm_min,
+    timeinfo.tm_sec
+  );
+
+  // ===================================================
+  // Set DS3231
+  // ===================================================
+
+  rtc.adjust(ntpTime);
+
+  Serial.println("DS3231 synchronized with NTP!");
+
+  // ===================================================
+  // Verify RTC
+  // ===================================================
+
+  DateTime rtcNow = rtc.now();
+
+  Serial.println();
+  Serial.println("RTC Time after synchronization:");
+
+  Serial.printf(
+    "%04d-%02d-%02d %02d:%02d:%02d\n",
+    rtcNow.year(),
+    rtcNow.month(),
+    rtcNow.day(),
+    rtcNow.hour(),
+    rtcNow.minute(),
+    rtcNow.second()
+  );
+}
+
+
+// =====================================================
 // SEND SENSOR DATA TO RENDER
 // =====================================================
 
@@ -242,9 +347,9 @@ void sendSensorData(
   bool irDetected
 ) {
 
-  // =========================
+  // ===================================================
   // Check WiFi
-  // =========================
+  // ===================================================
 
   if (WiFi.status() != WL_CONNECTED) {
 
@@ -257,10 +362,9 @@ void sendSensorData(
     return;
   }
 
-
-  // =========================
+  // ===================================================
   // Create RTC String
-  // =========================
+  // ===================================================
 
   char rtcTime[25];
 
@@ -276,14 +380,14 @@ void sendSensorData(
     now.second()
   );
 
-
-  // =========================
+  // ===================================================
   // Create JSON
-  // =========================
+  // ===================================================
 
   String jsonData = "{";
 
   jsonData += "\"device_id\":\"MEDBOX001\",";
+
   jsonData += "\"box_open\":";
   jsonData += boxOpen ? "true" : "false";
 
@@ -303,10 +407,9 @@ void sendSensorData(
 
   jsonData += "}";
 
-
-  // =========================
+  // ===================================================
   // HTTP POST
-  // =========================
+  // ===================================================
 
   HTTPClient http;
 
@@ -317,22 +420,18 @@ void sendSensorData(
     "application/json"
   );
 
-
   Serial.println();
   Serial.println("Sending sensor data...");
   Serial.println(jsonData);
 
-
   int httpResponseCode = http.POST(jsonData);
 
-
-  // =========================
+  // ===================================================
   // Response
-  // =========================
+  // ===================================================
 
   Serial.print("HTTP Response Code: ");
   Serial.println(httpResponseCode);
-
 
   if (httpResponseCode > 0) {
 
@@ -348,7 +447,6 @@ void sendSensorData(
       http.errorToString(httpResponseCode)
     );
   }
-
 
   http.end();
 
