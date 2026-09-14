@@ -15,6 +15,8 @@ class SensorData(Base):
 
     ir_detected = Column(Boolean, nullable=False)
 
+    taken = Column(Boolean, nullable=False, default=False)
+
     weight = Column(Float, nullable=True)
 
     rtc_time = Column(DateTime, nullable=False)
