@@ -11,6 +11,8 @@ class SensorDataCreate(BaseModel):
 
     ir_detected: bool
 
+    taken: bool = False
+
     weight: Optional[float] = None
 
     rtc_time: datetime
