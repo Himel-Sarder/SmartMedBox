@@ -8,8 +8,8 @@
 // WiFi
 // =====================================================
 
-const char* ssid = "Mama";
-const char* password = "MamaBari9900";
+const char* ssid = "XXXXXX";
+const char* password = "XXXXXXXXXXX";
 
 // =====================================================
 // Render FastAPI
